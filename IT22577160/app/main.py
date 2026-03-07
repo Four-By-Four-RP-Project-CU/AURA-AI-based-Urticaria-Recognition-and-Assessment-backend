@@ -73,20 +73,34 @@ def _build_analysis_artifacts(
         "Age":  46.83,
     }
 
-    def _pick(manual_val: Any, ocr_key: str) -> float:
+    def _pick(manual_val: Any, ocr_key: str) -> tuple:
+        """Returns (value, source) where source is 'manual', 'ocr', or 'fallback'."""
         if manual_val is not None and float(manual_val) != 0.0:
-            return float(manual_val)
+            return float(manual_val), "manual"
         ocr_val = extracted_labs.get(ocr_key)
         if ocr_val is not None and float(ocr_val) != 0.0:
-            return float(ocr_val)
-        return LAB_TRAIN_MEANS.get(ocr_key, 0.0)  # neutral fallback
+            return float(ocr_val), "ocr"
+        return LAB_TRAIN_MEANS.get(ocr_key, 0.0), "fallback"  # training-mean fallback
+
+    _crp,  _crp_src  = _pick(lab_overrides.get("CRP"),  "CRP")
+    _ft4,  _ft4_src  = _pick(lab_overrides.get("FT4"),  "FT4")
+    _ige,  _ige_src  = _pick(lab_overrides.get("IgE"),  "IgE")
+    _vitd, _vitd_src = _pick(lab_overrides.get("VitD"), "VitD")
+    _age,  _age_src  = _pick(lab_overrides.get("Age"),  "Age")
 
     lab_values: Dict[str, float] = {
-        "CRP":  _pick(lab_overrides.get("CRP"),  "CRP"),
-        "FT4":  _pick(lab_overrides.get("FT4"),  "FT4"),
-        "IgE":  _pick(lab_overrides.get("IgE"),  "IgE"),
-        "VitD": _pick(lab_overrides.get("VitD"), "VitD"),
-        "Age":  _pick(lab_overrides.get("Age"),  "Age"),
+        "CRP":  _crp,
+        "FT4":  _ft4,
+        "IgE":  _ige,
+        "VitD": _vitd,
+        "Age":  _age,
+    }
+    lab_sources: Dict[str, str] = {
+        "CRP":  _crp_src,
+        "FT4":  _ft4_src,
+        "IgE":  _ige_src,
+        "VitD": _vitd_src,
+        "Age":  _age_src,
     }
 
     # 3 — Model prediction
@@ -166,6 +180,7 @@ def _build_analysis_artifacts(
     return {
         **pred,
         "used_features":            used_features,
+        "lab_sources":              lab_sources,
         "extracted_labs":           extracted_labs,
         "notes":                    notes,
         "uas7_score":               uas7_value,

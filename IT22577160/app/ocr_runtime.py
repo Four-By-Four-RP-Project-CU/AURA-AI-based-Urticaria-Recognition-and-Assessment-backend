@@ -66,7 +66,9 @@ def extract_vitd(text: str) -> Optional[float]:
 def find_lab(text: str, patterns: List[str]) -> List[Tuple[str, float, str]]:
     hits = []
     for nm in patterns:
-        pattern = rf"({nm})\s*[:=]?\s*([<>]?\s*\d+(?:\.\d+)?)\s*([a-zA-Z0-9/\^\-\.\s]+)?"
+        # (?:\([^)]*\))? skips an optional parenthetical abbreviation such as
+        # "IMMUNOGLOBULIN E (IgE LEVEL)  455.60" or "FREE THYROXINE (F.T4)  0.890"
+        pattern = rf"({nm})\s*(?:\([^)]*\))?\s*[:=]?\s*([<>]?\s*\d+(?:\.\d+)?)\s*([a-zA-Z0-9/\^\-\.\s]+)?"
         for m in re.finditer(pattern, text, flags=re.IGNORECASE):
             val = _clean_num(m.group(2))
             unit = (m.group(3) or "").strip()
@@ -75,9 +77,11 @@ def find_lab(text: str, patterns: List[str]) -> List[Tuple[str, float, str]]:
     return hits
 
 LAB_SYNONYMS = {
-    "CRP":  [r"\bcrp\b", r"c[\-\s]?reactive\s*protein"],
-    "FT4":  [r"\bft4\b", r"free\s*t4", r"free\s*thyroxine", r"ft\s*4"],
-    "IgE":  [r"\bige\b", r"immunoglobulin\s*e", r"total\s*ige"],
+    "CRP":  [r"\bcrp\b", r"c[\-\s]?reactive\s*protein", r"c\.?\s*reactive"],
+    "FT4":  [r"\bft[\s\-]?4\b", r"free\s*t[\s\-]?4", r"free\s*thyroxine",
+             r"t4[\s,]*free", r"thyroxine[\s,]*free", r"f\.?\s*t\.?\s*4"],
+    "IgE":  [r"\big[\s\-]?e\b", r"immunoglobulin[\s\-]?e", r"total[\s\-]?ig[\s\-]?e",
+             r"ige[\s\-]?total", r"ig\.?\s*e\b"],
     "Age":  [r"\bage\b"],
     # kept for completeness / future use
     "ESR":     [r"\besr\b"],
