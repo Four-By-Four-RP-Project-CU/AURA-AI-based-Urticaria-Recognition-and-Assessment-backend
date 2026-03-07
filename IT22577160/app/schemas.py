@@ -15,6 +15,10 @@ class AnalyzeResponse(BaseModel):
     ood_z: float
     modality_gate_weights: List[float]
     used_features: Dict[str, float]
+    lab_sources: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Origin of each lab value: 'manual' (user input), 'ocr' (extracted from report image), or 'fallback' (training-set mean, OCR+manual both unavailable).",
+    )
     extracted_labs: Dict[str, Any] = {}
     notes: List[str] = []
     # UAS7 fields — populated when UAS7 score is provided
