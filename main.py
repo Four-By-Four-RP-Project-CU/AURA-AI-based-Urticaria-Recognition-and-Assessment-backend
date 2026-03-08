@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 # Import individual student apps
 from IT22577160.app.main import app as it22577160_app
+from IT22607232.app.Risk_main import app as it22607232_app
 
 # Create root application
 app = FastAPI(
@@ -33,8 +34,7 @@ def root():
         "version": "1.0.0",
         "modules": {
             "IT22577160": "/IT22577160",
-            # Add other student modules here
-            # "IT22XXXXXX": "/IT22XXXXXX",
+            "IT22607232": "/IT22607232",
         }
     }
 
@@ -45,6 +45,9 @@ def health():
 # Mount student modules
 # IT22577160 - CSU Decision Support (Lab extraction, Prediction, PDF reports)
 app.mount("/IT22577160", it22577160_app)
+
+# IT22607232 - CU Risk Profiling (Multi-task classification, OCR lab reports)
+app.mount("/IT22607232", it22607232_app)
 
 # Add more student modules here:
 # Example:
