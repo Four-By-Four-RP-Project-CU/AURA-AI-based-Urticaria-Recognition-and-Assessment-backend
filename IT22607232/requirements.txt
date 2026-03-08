@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+torch
+transformers
+joblib
+scikit-learn==1.6.1
+numpy
+pandas
+# OCR dependencies
+pytesseract
+opencv-python-headless
+pillow
+pymupdf
+# Required for FastAPI multipart/form-data (File + Form)
+python-multipart
