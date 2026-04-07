@@ -2,6 +2,9 @@
 __pycache__
 venv
 *.pyc
+*.log
+.env
+.env.*
 .pt
 .joblib
 IT22577160/artifacts/model.pt
