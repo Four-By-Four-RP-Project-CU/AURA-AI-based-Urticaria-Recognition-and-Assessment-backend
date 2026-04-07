@@ -1,0 +1,46 @@
+================================================================================
+MODEL PERFORMANCE REPORT
+================================================================================
+
+MODEL CONFIGURATION:
+  Architecture: GC_MuPeN_v3 (Gate-Controlled Multi-Path Ensemble Network)
+  Image Size: 224x224
+  Drug Classes: 4 (ADVANCED_THERAPY, H1_ANTIHISTAMINE, LTRA, OTHER)
+  Step Classes: 4 (STEP_1, STEP_2, STEP_3, STEP_4)
+
+TRAINING SUMMARY:
+  Total Epochs: 50
+
+INITIAL METRICS (Epoch 1):
+  Train Loss: 1.7368
+  Val Loss: 1.8939
+  Train Drug Acc: 28.66%
+  Val Drug Acc: 21.28%
+  Train Step Acc: 24.20%
+  Val Step Acc: 16.94%
+
+FINAL METRICS (Epoch 50):
+  Train Loss: 0.3182
+  Val Loss: 1.6783
+  Train Drug Acc: 98.40%
+  Val Drug Acc: 68.18%
+  Train Step Acc: 98.35%
+  Val Step Acc: 70.87%
+
+BEST VALIDATION METRICS:
+  Best Val Drug Acc: 70.25% (Epoch 11)
+  Best Val Step Acc: 72.11% (Epoch 36)
+  Best Val Loss: 1.3198 (Epoch 5)
+
+OVERFITTING ANALYSIS (Final Epoch):
+  Drug Accuracy Gap: 30.22%
+  Step Accuracy Gap: 27.48%
+  Loss Gap (Val - Train): 1.3601
+  ⚠ WARNING: Significant overfitting detected!
+  Recommendations:
+    - Increase dropout rate
+    - Add data augmentation
+    - Use early stopping
+    - Reduce model complexity
+
+================================================================================

@@ -1,0 +1,73 @@
+{
+  "text_model": "emilyalsentzer/Bio_ClinicalBERT",
+  "max_len": 384,
+  "type_classes": [
+    "Inducible",
+    "Mixed",
+    "Spontaneous"
+  ],
+  "risk_labels": [
+    "risk_thyroid",
+    "risk_autoimmune"
+  ],
+  "sidefx_classes": [
+    "LOW",
+    "MODERATE",
+    "HIGH"
+  ],
+  "num_cols": [
+    "CRP",
+    "FT4",
+    "IgE",
+    "VitD",
+    "Age",
+    "Weight",
+    "Height",
+    "Diagnosed at the age of"
+  ],
+  "cat_cols": [
+    "Family History of Urticaria",
+    "Family history of thyroid diseases",
+    "Family history of autoimmune diseases",
+    "Sex",
+    "History of Chronic Urticaria",
+    "Symptoms Of Urticaria",
+    "Duration of Symptoms of urticaria",
+    "If Wheals are present",
+    "The shape of an individual wheal",
+    "Size of a single Wheal",
+    "No. of wheals",
+    "Duration of wheal",
+    "Location",
+    "If  angioedema is present",
+    "Duration of angioedema",
+    "Discomfort of Swelling",
+    "Affect of Swelling on Daily activities",
+    "Angioedema affect on appearance",
+    "Overall affect of Swelling",
+    "Which applies to your wheals/angioedema or both?",
+    "Which of the following applies to your symptoms of urticaria?",
+    "Which time of the day do the symptoms occur?",
+    "Symptoms of Autoinflamation:",
+    "Alpha Gal",
+    "Specify other allergy",
+    "Remission of Angioedema after discontinuation of the drug:"
+  ],
+  "excluded_leak_cols": [
+    "Type of Provocation",
+    "Provocation Test results",
+    "If wheals/angioedema or both can be induced through specific stimulation, which stimuli can be applied?"
+  ],
+  "note_text_cols": [
+    "symptoms_raw",
+    "investigations_raw"
+  ],
+  "model_arch": {
+    "hidden": 512,
+    "dropout": 0.3,
+    "attention_pooling": true,
+    "tab_residual_blocks": 2,
+    "mlp_task_heads": true,
+    "uncertainty_mtl": true
+  }
+}
