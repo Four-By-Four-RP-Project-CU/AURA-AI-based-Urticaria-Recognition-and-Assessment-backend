@@ -4,6 +4,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
+from shared.mongo_store import generate_case_id, save_prescription_result
 
 from .schemas import AnalyzeResponse, AnalyzeFromRiskResponse, ExtractLabsResponse
 from .model_runtime import ModelRuntime, classify_uas7
@@ -318,6 +319,8 @@ async def extract_labs(lab_reports: list[UploadFile] = File(...)):
 async def analyze(
     skin_image:  UploadFile = File(...),
     lab_reports: list[UploadFile] = File(default=[]),
+    case_id: str = Form(default=""),
+    patient_name: str = Form(default=""),
 
     CRP:  Optional[float] = Form(default=None),
     FT4:  Optional[float] = Form(default=None),
@@ -343,6 +346,7 @@ async def analyze(
     img_bytes         = await skin_image.read()
     skin_pil          = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     lab_reports_bytes = [await f.read() for f in lab_reports] if lab_reports else []
+    resolved_case_id = case_id.strip() or generate_case_id()
 
     clin_values = _build_clin_values(
         Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
@@ -355,15 +359,51 @@ async def analyze(
         UAS7, daily_wheal_avg, daily_pruritus_avg,
         abstain_threshold,
     )
-    result.pop("_skin_pil",    None)
-    result.pop("_gradcam_pil", None)
-    result.pop("_redness_pil", None)
+    gradcam_pil = result.pop("_gradcam_pil", skin_pil)
+    redness_pil = result.pop("_redness_pil", skin_pil)
+    result.pop("_skin_pil", None)
+    result["case_id"] = resolved_case_id
+    result["mongo_persisted"] = save_prescription_result(
+        case_id=resolved_case_id,
+        patient_name=patient_name.strip(),
+        endpoint="/analyze",
+        request_payload={
+            "case_id": resolved_case_id,
+            "patient_name": patient_name.strip() or None,
+            "lab_reports_uploaded": [f.filename for f in lab_reports],
+            "lab_overrides": {"CRP": CRP, "FT4": FT4, "IgE": IgE, "VitD": VitD, "Age": Age},
+            "clinical_values": clin_values,
+            "uas7": UAS7,
+            "daily_wheal_avg": daily_wheal_avg,
+            "daily_pruritus_avg": daily_pruritus_avg,
+            "abstain_threshold": abstain_threshold,
+        },
+        result_payload=result,
+        uploaded_files=[
+            {
+                "filename": skin_image.filename or f"{resolved_case_id}_skin_image",
+                "content_type": skin_image.content_type or "image/*",
+                "content": img_bytes,
+            },
+            *[
+                {
+                    "filename": f.filename or f"{resolved_case_id}_lab_report",
+                    "content_type": f.content_type or "application/octet-stream",
+                    "content": content,
+                }
+                for f, content in zip(lab_reports, lab_reports_bytes)
+            ],
+        ],
+        generated_images={"gradcam": gradcam_pil, "redness": redness_pil},
+    )
     return result
 
 
 @app.post("/analyze/from-risk", response_model=AnalyzeFromRiskResponse)
 async def analyze_from_risk(
     skin_image: UploadFile = File(...),
+    case_id: str = Form(default=""),
+    patient_name: str = Form(default=""),
 
     risk_profile_json: Optional[str] = Form(
         default=None,
@@ -401,6 +441,11 @@ async def analyze_from_risk(
         risk_payload, extracted_labs_payload
     )
     risk_context_summary, integrated_note = _build_risk_context_summary(risk_payload)
+    resolved_case_id = (
+        case_id.strip()
+        or str(risk_payload.get("case_id", "") or "").strip()
+        or generate_case_id()
+    )
 
     clin_values = _build_clin_values(
         Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
@@ -417,16 +462,43 @@ async def analyze_from_risk(
         abstain_threshold=abstain_threshold,
         prefetched_labs=handoff_labs,
     )
+    gradcam_pil = result.pop("_gradcam_pil", skin_pil)
+    redness_pil = result.pop("_redness_pil", skin_pil)
     result.pop("_skin_pil", None)
-    result.pop("_gradcam_pil", None)
-    result.pop("_redness_pil", None)
     result["handoff_source"] = handoff_source
     result["risk_profile_received"] = risk_profile_received
     result["reused_extracted_labs"] = bool(handoff_labs)
     result["risk_context_summary"] = risk_context_summary
     result["integrated_clinical_note"] = integrated_note
+    result["case_id"] = resolved_case_id
     if integrated_note:
         result.setdefault("notes", []).append(integrated_note)
+    result["mongo_persisted"] = save_prescription_result(
+        case_id=resolved_case_id,
+        patient_name=patient_name.strip(),
+        endpoint="/analyze/from-risk",
+        request_payload={
+            "case_id": resolved_case_id,
+            "patient_name": patient_name.strip() or None,
+            "handoff_source": handoff_source,
+            "risk_profile_present": bool(risk_payload),
+            "lab_overrides": {"CRP": CRP, "FT4": FT4, "IgE": IgE, "VitD": VitD, "Age": Age},
+            "clinical_values": clin_values,
+            "uas7": UAS7,
+            "daily_wheal_avg": daily_wheal_avg,
+            "daily_pruritus_avg": daily_pruritus_avg,
+            "abstain_threshold": abstain_threshold,
+        },
+        result_payload=result,
+        uploaded_files=[
+            {
+                "filename": skin_image.filename or f"{resolved_case_id}_skin_image",
+                "content_type": skin_image.content_type or "image/*",
+                "content": img_bytes,
+            }
+        ],
+        generated_images={"gradcam": gradcam_pil, "redness": redness_pil},
+    )
     return result
 
 

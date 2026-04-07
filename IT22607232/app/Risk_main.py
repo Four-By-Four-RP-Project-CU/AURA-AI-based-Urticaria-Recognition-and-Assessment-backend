@@ -4,6 +4,7 @@ from typing import Annotated, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from shared.mongo_store import generate_case_id, save_risk_result
 
 from .Risk_schema import (
     PredictRequest,
@@ -115,12 +116,22 @@ def predict(req: PredictRequest):
         "Height":                   req.Height,
         "Diagnosed at the age of":  req.diagnosed_age,
     }
-    return rt.predict(
+    case_id = (req.case_id or "").strip() or generate_case_id()
+    result = rt.predict(
         symptoms_raw=req.symptoms_raw,
         investigations_raw=req.investigations_raw,
         labs=labs,
         categorical=req.categorical,
     )
+    result["case_id"] = case_id
+    result["mongo_persisted"] = save_risk_result(
+        case_id=case_id,
+        patient_name=req.patient_name or "",
+        endpoint="/predict",
+        request_payload=req.model_dump(),
+        result_payload=result,
+    )
+    return result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -159,6 +170,8 @@ async def predict_ocr(
     weight:        Annotated[Optional[float], Form(description="Weight (kg)")] = None,
     height:        Annotated[Optional[float], Form(description="Height (cm)")] = None,
     diagnosed_age: Annotated[Optional[float], Form(description="Age at CU diagnosis")] = None,
+    case_id:       Annotated[Optional[str], Form(description="Optional shared case identifier for linking downstream prescription results")] = None,
+    patient_name:  Annotated[Optional[str], Form(description="Optional patient name or anonymised label")] = None,
 
     # ── Manual lab overrides — typed if OCR cannot read a value ──────────────
     crp_manual:  Annotated[Optional[float], Form(description="CRP (mg/L) — overrides OCR value if provided")] = None,
@@ -199,6 +212,7 @@ async def predict_ocr(
     # ── 2. Run OCR on every uploaded file ─────────────────────────────────────
     all_lab_texts: List[str] = []
     all_rx_texts:  List[str] = []
+    uploaded_files_for_db: List[dict] = []
 
     for upload in files:
         ext = Path(upload.filename or "").suffix.lower()
@@ -211,6 +225,13 @@ async def predict_ocr(
                 ),
             )
         content = await upload.read()
+        uploaded_files_for_db.append(
+            {
+                "filename": upload.filename or f"file{ext}",
+                "content_type": upload.content_type or "application/octet-stream",
+                "content": content,
+            }
+        )
         result = process_upload(upload.filename or f"file{ext}", content)
         all_lab_texts.extend(result["lab_texts"])
         all_rx_texts.extend(result["rx_texts"])
@@ -243,8 +264,10 @@ async def predict_ocr(
     )
 
     # ── 7. Return risk profile + OCR audit trail ──────────────────────────────
-    return {
+    response = {
         **profile,
+        "case_id": (case_id or "").strip() or generate_case_id(),
+        "mongo_persisted": False,
         "ocr_info": {
             "files_processed":    len(files),
             "labs_extracted":     ocr["labs_extracted"],
@@ -253,4 +276,26 @@ async def predict_ocr(
             "missing_fields":     ocr["missing_fields"],
         },
     }
+    response["mongo_persisted"] = save_risk_result(
+        case_id=response["case_id"],
+        patient_name=patient_name or "",
+        endpoint="/predict-ocr",
+        request_payload={
+            "age": age,
+            "weight": weight,
+            "height": height,
+            "diagnosed_age": diagnosed_age,
+            "crp_manual": crp_manual,
+            "ft4_manual": ft4_manual,
+            "ige_manual": ige_manual,
+            "vitd_manual": vitd_manual,
+            "symptoms_text": symptoms_text,
+            "investigations_text": investigations_text,
+            "categorical": categorical,
+            "uploaded_files": [f["filename"] for f in uploaded_files_for_db],
+        },
+        result_payload=response,
+        uploaded_files=uploaded_files_for_db,
+    )
+    return response
 

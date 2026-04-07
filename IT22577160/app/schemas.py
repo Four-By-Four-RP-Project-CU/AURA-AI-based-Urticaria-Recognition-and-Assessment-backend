@@ -2,6 +2,14 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
 class AnalyzeResponse(BaseModel):
+    case_id: Optional[str] = Field(
+        default=None,
+        description="Shared case identifier used to link risk and prescription records across MongoDB collections.",
+    )
+    mongo_persisted: bool = Field(
+        default=False,
+        description="Whether this prediction was successfully persisted to MongoDB.",
+    )
     predicted_drug_group: str
     confidence: float
     top3: List[List[Any]]

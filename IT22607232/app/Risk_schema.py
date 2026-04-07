@@ -49,6 +49,8 @@ class PredictRequest(BaseModel):
     # ── Free-text inputs fed to Bio_ClinicalBERT ─────────────────────────────
     symptoms_raw:       str = Field("", description="Free-text symptom description")
     investigations_raw: str = Field("", description="Free-text lab / investigation notes")
+    case_id:            Optional[str] = Field(None, description="Optional shared case identifier")
+    patient_name:       Optional[str] = Field(None, description="Optional patient name or anonymised label")
 
     # ── Numeric lab values (OCR-extractable, all optional) ───────────────────
     CRP:    Optional[float] = Field(None, description="C-Reactive Protein (mg/L)")
@@ -102,6 +104,8 @@ class SeverityResult(BaseModel):
 
 
 class RiskProfileResponse(BaseModel):
+    case_id:                 Optional[str] = None
+    mongo_persisted:         bool = False
     urticaria_type:          UrticariaTypeResult
     secondary_disease_risk:  SecondaryRiskResult
     sideeffect_risk:         SideEffectResult
