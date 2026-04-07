@@ -242,6 +242,61 @@ def _extract_handoff_labs(
     return {}, "manual_only", bool(risk_profile_payload)
 
 
+def _build_risk_context_summary(risk_profile_payload: Dict[str, Any]) -> tuple[Dict[str, Any], Optional[str]]:
+    if not risk_profile_payload:
+        return {}, None
+
+    urticaria_type = str(risk_profile_payload.get("urticaria_type", {}).get("predicted", "") or "")
+    severity = risk_profile_payload.get("severity", {}) or {}
+    secondary = risk_profile_payload.get("secondary_disease_risk", {}) or {}
+    sideeffect = risk_profile_payload.get("sideeffect_risk", {}) or {}
+
+    severity_band = str(severity.get("band", "") or "")
+    severity_score = severity.get("predicted_score")
+    sideeffect_level = str(sideeffect.get("level", "") or "")
+    thyroid_flag = bool(secondary.get("thyroid_flag", False))
+    autoimmune_flag = bool(secondary.get("autoimmune_flag", False))
+    high_sideeffect_flag = bool(sideeffect.get("high_risk_flag", False))
+    composite_risk_score = risk_profile_payload.get("composite_risk_score")
+
+    cautions: list[str] = []
+    if thyroid_flag:
+        cautions.append("elevated thyroid-associated comorbidity risk")
+    if autoimmune_flag:
+        cautions.append("elevated autoimmune comorbidity risk")
+    if high_sideeffect_flag:
+        cautions.append("high side-effect risk")
+
+    summary = {
+        "urticaria_type": urticaria_type or None,
+        "severity_band": severity_band or None,
+        "severity_score": severity_score,
+        "sideeffect_level": sideeffect_level or None,
+        "high_sideeffect_flag": high_sideeffect_flag,
+        "thyroid_flag": thyroid_flag,
+        "autoimmune_flag": autoimmune_flag,
+        "composite_risk_score": composite_risk_score,
+        "clinical_interpretation": risk_profile_payload.get("clinical_interpretation"),
+        "cautions": cautions,
+    }
+
+    note_parts = []
+    if urticaria_type:
+        note_parts.append(f"Risk profiling suggests {urticaria_type.lower()}.")
+    if severity_band:
+        sev_text = f"{severity_band.lower()} severity"
+        if severity_score is not None:
+            sev_text += f" (score {float(severity_score):.2f}/10)"
+        note_parts.append(f"Systemic risk assessment indicates {sev_text}.")
+    if cautions:
+        note_parts.append("Contextual cautions: " + ", ".join(cautions) + ".")
+    interpretation = risk_profile_payload.get("clinical_interpretation")
+    if interpretation:
+        note_parts.append(f"Risk module interpretation: {interpretation}")
+
+    return summary, " ".join(note_parts) if note_parts else None
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -345,6 +400,7 @@ async def analyze_from_risk(
     handoff_labs, handoff_source, risk_profile_received = _extract_handoff_labs(
         risk_payload, extracted_labs_payload
     )
+    risk_context_summary, integrated_note = _build_risk_context_summary(risk_payload)
 
     clin_values = _build_clin_values(
         Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
@@ -367,6 +423,10 @@ async def analyze_from_risk(
     result["handoff_source"] = handoff_source
     result["risk_profile_received"] = risk_profile_received
     result["reused_extracted_labs"] = bool(handoff_labs)
+    result["risk_context_summary"] = risk_context_summary
+    result["integrated_clinical_note"] = integrated_note
+    if integrated_note:
+        result.setdefault("notes", []).append(integrated_note)
     return result
 
 

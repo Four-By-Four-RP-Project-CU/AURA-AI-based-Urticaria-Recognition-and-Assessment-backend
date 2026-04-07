@@ -59,6 +59,14 @@ class AnalyzeFromRiskResponse(AnalyzeResponse):
         default=False,
         description="Whether extracted lab values from the previous risk-analysis step were reused.",
     )
+    risk_context_summary: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Rule-based contextual summary derived from the risk-analysis JSON. Used for decision support only; does not change the prescription model weights.",
+    )
+    integrated_clinical_note: Optional[str] = Field(
+        default=None,
+        description="A combined interpretation that places the prescription recommendation alongside risk-analysis findings.",
+    )
 
 class ExtractLabsResponse(BaseModel):
     extracted: Dict[str, Any]
