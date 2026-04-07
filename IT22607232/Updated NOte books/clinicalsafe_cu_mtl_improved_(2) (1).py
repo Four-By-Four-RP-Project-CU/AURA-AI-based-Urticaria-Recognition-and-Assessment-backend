@@ -1257,7 +1257,7 @@ axes[0].set_ylim(0, 1.12)
 axes[0].axhline(1.0, color="gray", linestyle=":", linewidth=0.8)
 for bar, val in zip(bars, clf_values):
     axes[0].text(bar.get_x() + bar.get_width()/2, val + 0.015,
-                 f"{val:.3f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+            f"{val:.3f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
 axes[0].set_title("Classification & AUC Metrics")
 axes[0].set_ylabel("Score")
 axes[0].yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1))
@@ -1269,7 +1269,7 @@ mae_val = test_metrics["severity_mae"] or 0.0
 bar2 = axes[1].bar(["Severity\nMAE (↓)"], [mae_val], color="#795548", edgecolor="white", width=0.4)
 axes[1].set_ylim(0, max(5.0, mae_val * 1.4))
 axes[1].text(bar2[0].get_x() + bar2[0].get_width()/2, mae_val + 0.05,
-             f"{mae_val:.3f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
+            f"{mae_val:.3f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
 axes[1].set_title("Severity Regression\n(MAE on 0–10 scale)")
 axes[1].set_ylabel("MAE")
 axes[1].grid(axis="y", alpha=0.3)

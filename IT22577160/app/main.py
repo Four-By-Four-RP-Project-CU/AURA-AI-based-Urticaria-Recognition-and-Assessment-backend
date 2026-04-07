@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
-from .schemas import AnalyzeResponse, ExtractLabsResponse
+from .schemas import AnalyzeResponse, AnalyzeFromRiskResponse, ExtractLabsResponse
 from .model_runtime import ModelRuntime, classify_uas7
 from .ocr_runtime import extract_labs_from_images
 from .explain import GradCAM, overlay_heatmap_on_pil, redness_map, compute_cu_characteristics
@@ -49,6 +49,7 @@ def _build_analysis_artifacts(
     daily_wheal_avg: Optional[float],
     daily_pruritus_avg: Optional[float],
     abstain_threshold: float,
+    prefetched_labs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Run the full AURA analysis pipeline.
@@ -57,8 +58,8 @@ def _build_analysis_artifacts(
     (_skin_pil, _gradcam_pil, _redness_pil) used only by /report/pdf.
     """
     # 1 — OCR lab extraction
-    extracted_labs: Dict[str, Any] = {}
-    if lab_reports_bytes:
+    extracted_labs: Dict[str, Any] = dict(prefetched_labs or {})
+    if not extracted_labs and lab_reports_bytes:
         extracted_labs = extract_labs_from_images(lab_reports_bytes)
 
     # 2 — Merge manual overrides with OCR (manual wins when non-None and non-zero).
@@ -194,6 +195,53 @@ def _build_analysis_artifacts(
     }
 
 
+def _build_clin_values(
+    Weight: Optional[float],
+    Height: Optional[float],
+    Age_experienced_first_symptoms: Optional[float],
+    Diagnosed_at_the_age_of: Optional[float],
+    Itching_score: Optional[float],
+) -> Dict[str, float]:
+    return {
+        "Weight":                                                          Weight or 0.0,
+        "Height":                                                          Height or 0.0,
+        "Age experienced the first symptoms":                              Age_experienced_first_symptoms or 0.0,
+        "Diagnosed at the age of":                                         Diagnosed_at_the_age_of or 0.0,
+        "Itching score":                                                   Itching_score or 0.0,
+        "1.7 If angioedema is present,\nWhich of the following Drugs do you use": 0.0,
+    }
+
+
+def _parse_json_form(payload: Optional[str], field_name: str) -> Dict[str, Any]:
+    if not payload or not payload.strip():
+        return {}
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail=f"{field_name} is not valid JSON: {exc}")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=422, detail=f"{field_name} must be a JSON object.")
+    return parsed
+
+
+def _extract_handoff_labs(
+    risk_profile_payload: Dict[str, Any],
+    extracted_labs_payload: Dict[str, Any],
+) -> tuple[Dict[str, Any], str, bool]:
+    if extracted_labs_payload:
+        return extracted_labs_payload, "extracted_labs_json", bool(risk_profile_payload)
+
+    if isinstance(risk_profile_payload.get("ocr_info"), dict):
+        labs = risk_profile_payload["ocr_info"].get("labs_extracted")
+        if isinstance(labs, dict):
+            return labs, "risk_profile.ocr_info.labs_extracted", True
+
+    if isinstance(risk_profile_payload.get("extracted_labs"), dict):
+        return risk_profile_payload["extracted_labs"], "risk_profile.extracted_labs", True
+
+    return {}, "manual_only", bool(risk_profile_payload)
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -241,14 +289,9 @@ async def analyze(
     skin_pil          = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     lab_reports_bytes = [await f.read() for f in lab_reports] if lab_reports else []
 
-    clin_values: Dict[str, float] = {
-        "Weight":                                                          Weight or 0.0,
-        "Height":                                                          Height or 0.0,
-        "Age experienced the first symptoms":                              Age_experienced_first_symptoms or 0.0,
-        "Diagnosed at the age of":                                         Diagnosed_at_the_age_of or 0.0,
-        "Itching score":                                                   Itching_score or 0.0,
-        "1.7 If angioedema is present,\nWhich of the following Drugs do you use": 0.0,
-    }
+    clin_values = _build_clin_values(
+        Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
+    )
 
     result = _build_analysis_artifacts(
         skin_pil, lab_reports_bytes,
@@ -260,6 +303,70 @@ async def analyze(
     result.pop("_skin_pil",    None)
     result.pop("_gradcam_pil", None)
     result.pop("_redness_pil", None)
+    return result
+
+
+@app.post("/analyze/from-risk", response_model=AnalyzeFromRiskResponse)
+async def analyze_from_risk(
+    skin_image: UploadFile = File(...),
+
+    risk_profile_json: Optional[str] = Form(
+        default=None,
+        description="Full JSON response from the risk-analysis step. Used to reuse extracted lab values without uploading reports again.",
+    ),
+    extracted_labs_json: Optional[str] = Form(
+        default=None,
+        description="Optional JSON object of extracted lab values. Overrides labs found inside risk_profile_json when provided.",
+    ),
+
+    CRP: Optional[float] = Form(default=None),
+    FT4: Optional[float] = Form(default=None),
+    IgE: Optional[float] = Form(default=None),
+    VitD: Optional[float] = Form(default=None),
+    Age: Optional[float] = Form(default=None),
+
+    Weight: Optional[float] = Form(default=None),
+    Height: Optional[float] = Form(default=None),
+    Age_experienced_first_symptoms: Optional[float] = Form(default=None),
+    Diagnosed_at_the_age_of: Optional[float] = Form(default=None),
+    Itching_score: Optional[float] = Form(default=None),
+
+    UAS7: Optional[float] = Form(default=None),
+    daily_wheal_avg: Optional[float] = Form(default=None),
+    daily_pruritus_avg: Optional[float] = Form(default=None),
+
+    abstain_threshold: float = Form(default=0.55),
+):
+    img_bytes = await skin_image.read()
+    skin_pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+    risk_payload = _parse_json_form(risk_profile_json, "risk_profile_json")
+    extracted_labs_payload = _parse_json_form(extracted_labs_json, "extracted_labs_json")
+    handoff_labs, handoff_source, risk_profile_received = _extract_handoff_labs(
+        risk_payload, extracted_labs_payload
+    )
+
+    clin_values = _build_clin_values(
+        Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
+    )
+
+    result = _build_analysis_artifacts(
+        skin_pil=skin_pil,
+        lab_reports_bytes=[],
+        lab_overrides={"CRP": CRP, "FT4": FT4, "IgE": IgE, "VitD": VitD, "Age": Age},
+        clin_values=clin_values,
+        uas7=UAS7,
+        daily_wheal_avg=daily_wheal_avg,
+        daily_pruritus_avg=daily_pruritus_avg,
+        abstain_threshold=abstain_threshold,
+        prefetched_labs=handoff_labs,
+    )
+    result.pop("_skin_pil", None)
+    result.pop("_gradcam_pil", None)
+    result.pop("_redness_pil", None)
+    result["handoff_source"] = handoff_source
+    result["risk_profile_received"] = risk_profile_received
+    result["reused_extracted_labs"] = bool(handoff_labs)
     return result
 
 
@@ -334,14 +441,9 @@ async def report_pdf(
         # ── Slow path: run full inference (fallback / direct API calls) ──────
         lab_reports_bytes = [await f.read() for f in lab_reports] if lab_reports else []
 
-        clin_values: Dict[str, float] = {
-            "Weight":                                                          Weight or 0.0,
-            "Height":                                                          Height or 0.0,
-            "Age experienced the first symptoms":                              Age_experienced_first_symptoms or 0.0,
-            "Diagnosed at the age of":                                         Diagnosed_at_the_age_of or 0.0,
-            "Itching score":                                                   Itching_score or 0.0,
-            "1.7 If angioedema is present,\nWhich of the following Drugs do you use": 0.0,
-        }
+        clin_values = _build_clin_values(
+            Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
+        )
 
         result = _build_analysis_artifacts(
             skin_pil, lab_reports_bytes,
@@ -373,4 +475,106 @@ async def report_pdf(
         content    = pdf_bytes,
         media_type = "application/pdf",
         headers    = {"Content-Disposition": f"attachment; filename=AURA_CSU_Report_{cid}.pdf"},
+    )
+
+
+@app.post("/report/pdf/from-risk")
+async def report_pdf_from_risk(
+    skin_image: UploadFile = File(...),
+
+    case_id: str = Form(default=""),
+    patient_name: str = Form(default=""),
+
+    risk_profile_json: Optional[str] = Form(
+        default=None,
+        description="Full JSON response from the risk-analysis step. Used to reuse extracted lab values without re-uploading reports.",
+    ),
+    extracted_labs_json: Optional[str] = Form(
+        default=None,
+        description="Optional JSON object of extracted lab values. Overrides labs found inside risk_profile_json when provided.",
+    ),
+    cached_result: Optional[str] = Form(default=None),
+
+    CRP: Optional[float] = Form(default=None),
+    FT4: Optional[float] = Form(default=None),
+    IgE: Optional[float] = Form(default=None),
+    VitD: Optional[float] = Form(default=None),
+    Age: Optional[float] = Form(default=None),
+
+    Weight: Optional[float] = Form(default=None),
+    Height: Optional[float] = Form(default=None),
+    Age_experienced_first_symptoms: Optional[float] = Form(default=None),
+    Diagnosed_at_the_age_of: Optional[float] = Form(default=None),
+    Itching_score: Optional[float] = Form(default=None),
+
+    UAS7: Optional[float] = Form(default=None),
+    daily_wheal_avg: Optional[float] = Form(default=None),
+    daily_pruritus_avg: Optional[float] = Form(default=None),
+
+    abstain_threshold: float = Form(default=0.55),
+):
+    img_bytes = await skin_image.read()
+    skin_pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+    if cached_result:
+        result = json.loads(cached_result)
+
+        gradcam_pil: Image.Image = skin_pil
+        if gradcam is not None:
+            try:
+                used = result.get("used_features", {})
+                lab_vals_cached = {k: float(used.get(k, 0.0)) for k in runtime.lab_cols}
+                clin_vals_cached = {k: float(used.get(k, 0.0)) for k in runtime.clin_cols}
+                img_t, lab_t, clin_t = runtime.preprocess(skin_pil, lab_vals_cached, clin_vals_cached)
+                class_idx = runtime.drug_groups.index(result["predicted_drug_group"])
+                hm = gradcam.compute(img_t, lab_t, clin_t, class_idx)
+                gradcam_pil = overlay_heatmap_on_pil(skin_pil, hm)
+            except Exception:
+                pass
+
+        red_hm = redness_map(skin_pil)
+        redness_pil = overlay_heatmap_on_pil(skin_pil, red_hm)
+        result["cu_characteristics"] = compute_cu_characteristics(skin_pil)
+    else:
+        risk_payload = _parse_json_form(risk_profile_json, "risk_profile_json")
+        extracted_labs_payload = _parse_json_form(extracted_labs_json, "extracted_labs_json")
+        handoff_labs, _, _ = _extract_handoff_labs(risk_payload, extracted_labs_payload)
+        clin_values = _build_clin_values(
+            Weight, Height, Age_experienced_first_symptoms, Diagnosed_at_the_age_of, Itching_score
+        )
+
+        result = _build_analysis_artifacts(
+            skin_pil=skin_pil,
+            lab_reports_bytes=[],
+            lab_overrides={"CRP": CRP, "FT4": FT4, "IgE": IgE, "VitD": VitD, "Age": Age},
+            clin_values=clin_values,
+            uas7=UAS7,
+            daily_wheal_avg=daily_wheal_avg,
+            daily_pruritus_avg=daily_pruritus_avg,
+            abstain_threshold=abstain_threshold,
+            prefetched_labs=handoff_labs,
+        )
+
+        gradcam_pil = result.pop("_gradcam_pil", skin_pil)
+        redness_pil = result.pop("_redness_pil", skin_pil)
+        result.pop("_skin_pil", None)
+
+    cid = case_id.strip() or str(uuid.uuid4())[:8].upper()
+    patient_meta = {
+        "Case ID": cid,
+        "Patient": patient_name.strip() or "Anonymous",
+    }
+
+    pdf_bytes = build_pdf_report(
+        patient_meta=patient_meta,
+        prediction=result,
+        extracted_labs=result.get("extracted_labs", {}),
+        images={"skin": skin_pil, "gradcam": gradcam_pil, "redness": redness_pil},
+        cu_characteristics=result.get("cu_characteristics"),
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=AURA_CSU_Report_{cid}.pdf"},
     )

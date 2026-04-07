@@ -46,6 +46,20 @@ class AnalyzeResponse(BaseModel):
         ),
     )
 
+class AnalyzeFromRiskResponse(AnalyzeResponse):
+    handoff_source: str = Field(
+        default="risk_profile",
+        description="Source used to prefill prescription labs without re-uploading reports.",
+    )
+    risk_profile_received: bool = Field(
+        default=False,
+        description="Whether a full risk-analysis payload was supplied in the request.",
+    )
+    reused_extracted_labs: bool = Field(
+        default=False,
+        description="Whether extracted lab values from the previous risk-analysis step were reused.",
+    )
+
 class ExtractLabsResponse(BaseModel):
     extracted: Dict[str, Any]
     warnings: List[str] = []
