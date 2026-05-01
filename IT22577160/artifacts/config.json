@@ -1,0 +1,65 @@
+{
+  "image_size": 224,
+  "drug_groups": [
+    "ADVANCED_THERAPY",
+    "H1_ANTIHISTAMINE",
+    "LTRA",
+    "OTHER"
+  ],
+  "guideline_steps": [
+    "STEP_1",
+    "STEP_2",
+    "STEP_3",
+    "STEP_4"
+  ],
+  "lab_features": [
+    "CRP",
+    "FT4",
+    "IgE",
+    "VitD",
+    "Age"
+  ],
+  "clinical_features": [
+    "Weight",
+    "Height",
+    "Age experienced the first symptoms",
+    "Diagnosed at the age of",
+    "Itching score",
+    "1.7 If angioedema is present,\nWhich of the following Drugs do you use"
+  ],
+  "lab_means": [
+    10.190906886517945,
+    1.3063676042677013,
+    395.4990785645005,
+    32.36757032007759,
+    46.83414161008729
+  ],
+  "lab_stds": [
+    5.363568103164806,
+    0.3089682522971068,
+    227.6636428435522,
+    11.225629016544717,
+    17.23073539300754
+  ],
+  "clinical_means": [
+    69.71513094083413,
+    167.92677012609118,
+    29.597478176527645,
+    35.98933074684772,
+    5.529582929194956,
+    0.0
+  ],
+  "clinical_stds": [
+    14.082279677648568,
+    10.13294794301616,
+    18.754600375761886,
+    19.3788272402833,
+    2.870460199385112,
+    1e-08
+  ],
+  "image_col": "image_path",
+  "drug_col": "drug_group",
+  "split_col": "split",
+  "drug_name_col": null,
+  "model_name": "GC_MuPeN_v3_EfficientNetB3_FiLM_GatedFusion"
+}

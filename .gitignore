@@ -2,3 +2,13 @@
 __pycache__
 venv
 *.pyc
+*.log
+.env
+.env.*
+.pt
+.joblib
+IT22577160/artifacts/model.pt
+IT22607232/RISk Base Model/lab_only_best.pt
+IT22607232/artifacts/best_model (1).pt
+IT22607232/artifacts/model.pt
+IT22607232/artifacts/preprocess.joblib

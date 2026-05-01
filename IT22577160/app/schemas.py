@@ -2,6 +2,14 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
 class AnalyzeResponse(BaseModel):
+    case_id: Optional[str] = Field(
+        default=None,
+        description="Shared case identifier used to link risk and prescription records across MongoDB collections.",
+    )
+    mongo_persisted: bool = Field(
+        default=False,
+        description="Whether this prediction was successfully persisted to MongoDB.",
+    )
     predicted_drug_group: str
     confidence: float
     top3: List[List[Any]]
@@ -44,6 +52,28 @@ class AnalyzeResponse(BaseModel):
             "erythema scores, redness coverage, wheal count, diameter, circularity, "
             "aspect ratio, distribution pattern, and shape description."
         ),
+    )
+
+class AnalyzeFromRiskResponse(AnalyzeResponse):
+    handoff_source: str = Field(
+        default="risk_profile",
+        description="Source used to prefill prescription labs without re-uploading reports.",
+    )
+    risk_profile_received: bool = Field(
+        default=False,
+        description="Whether a full risk-analysis payload was supplied in the request.",
+    )
+    reused_extracted_labs: bool = Field(
+        default=False,
+        description="Whether extracted lab values from the previous risk-analysis step were reused.",
+    )
+    risk_context_summary: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Rule-based contextual summary derived from the risk-analysis JSON. Used for decision support only; does not change the prescription model weights.",
+    )
+    integrated_clinical_note: Optional[str] = Field(
+        default=None,
+        description="A combined interpretation that places the prescription recommendation alongside risk-analysis findings.",
     )
 
 class ExtractLabsResponse(BaseModel):
