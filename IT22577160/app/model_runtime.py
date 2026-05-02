@@ -1,4 +1,5 @@
 import json, os
+import logging
 from typing import Dict, Any, Tuple
 import numpy as np
 import torch
@@ -7,6 +8,10 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 import timm
+try:
+    from huggingface_hub import snapshot_download as _hf_snapshot_download
+except Exception:
+    _hf_snapshot_download = None
 
 # ---------------------------------------------------------------------------
 # EAACI / GA²LEN Chronic Spontaneous Urticaria (CSU) Guideline Step Details
@@ -274,12 +279,47 @@ class GC_MuPeN_v3(nn.Module):
 GC_MuPeN = GC_MuPeN_v3
 GC_MuPeN_v4 = GC_MuPeN_v3
 
+
+def _env_first(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
 # -------------------------
 # Runtime wrapper
 # -------------------------
 class ModelRuntime:
     def __init__(self, artifacts_dir: str, device: str | None = None):
+        # Optional Hugging Face repo override for Azure/container deployments.
+        hf_repo = _env_first(
+            "PRESCRIPTION_MODEL_REPO",
+            "IT22577160_MODEL_REPO",
+            "HUGGINGFACE_MODEL_REPO",
+            "HF_MODEL_REPO",
+        )
+        hf_token = _env_first("HF_TOKEN", "HUGGINGFACE_HUB_TOKEN")
+        downloaded = False
+        if hf_repo and _hf_snapshot_download is not None:
+            try:
+                repo_dir = _hf_snapshot_download(repo_id=hf_repo, token=hf_token)
+                artifacts_dir = repo_dir
+                downloaded = True
+            except Exception:
+                # Non-fatal: fall back to provided artifacts_dir
+                downloaded = False
+
         self.artifacts_dir = artifacts_dir
+        # Logging: indicate whether HF snapshot was used and final artifacts dir
+        logger = logging.getLogger(__name__)
+        if hf_repo:
+            if downloaded:
+                logger.info("Downloaded artifacts from HF repo '%s' — using %s", hf_repo, self.artifacts_dir)
+            else:
+                logger.info("HUGGINGFACE_MODEL_REPO set to '%s' but download failed — falling back to %s", hf_repo, self.artifacts_dir)
+        else:
+            logger.info("No HUGGINGFACE_MODEL_REPO set — using local artifacts at %s", self.artifacts_dir)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
         with open(os.path.join(artifacts_dir, "config.json"), "r") as f:

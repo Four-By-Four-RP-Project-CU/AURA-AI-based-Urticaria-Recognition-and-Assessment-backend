@@ -5,6 +5,7 @@ venv
 *.log
 .env
 .env.*
+!.env.azure.example
 .pt
 .joblib
 IT22577160/artifacts/model.pt

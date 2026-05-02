@@ -1,0 +1,30 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.env.*
+pytest-cache-files-*
+uvicorn.err.log
+uvicorn.out.log
+
+# Research/training assets not needed for runtime deployment
+*.ipynb
+IT22577160/Image only base model/
+IT22577160/visualizations/
+IT22577160/final_report_draft.md
+IT22607232/Updated NOte books/
+IT22607232/RISk Base Model/
+IT22607232/Risk Fusion Plots/
+
+# Exclude large local model binaries from the container build.
+# Azure should download these from Hugging Face at startup.
+IT22577160/artifacts/model.pt
+IT22607232/artifacts/model.pt
+IT22607232/artifacts/best_model (1).pt
+IT22607232/artifacts/preprocess.joblib

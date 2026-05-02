@@ -1,4 +1,6 @@
 import json
+import os
+import logging
 import numpy as np
 import pandas as pd
 import joblib
@@ -6,6 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
+try:
+    from huggingface_hub import snapshot_download as _hf_snapshot_download
+except Exception:  # huggingface_hub may be absent in some environments
+    _hf_snapshot_download = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,9 +38,10 @@ class AttentionPooling(nn.Module):
 class GatedFusionMTL(nn.Module):
     """Task-Conditioned Gated Fusion MTL — mirrors ClinicalSafe_CU_MTL_Improved."""
 
-    def __init__(self, tab_dim: int, text_model_name: str, hidden: int = 512, dropout: float = 0.3):
+    def __init__(self, tab_dim: int, text_model_name: str, hidden: int = 512, dropout: float = 0.3, hf_token: str | None = None):
         super().__init__()
-        self.text_encoder = AutoModel.from_pretrained(text_model_name)
+        hf_kwargs = {"token": hf_token} if hf_token else {}
+        self.text_encoder = AutoModel.from_pretrained(text_model_name, **hf_kwargs)
         text_dim = self.text_encoder.config.hidden_size
 
         self.attn_pool = AttentionPooling(text_dim)
@@ -156,15 +163,51 @@ def _composite_interpretation(score: float) -> str:
 # Runtime
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _env_first(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
 class Runtime:
     def __init__(self, artifacts_dir: str, device: str = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        hf_repo = _env_first(
+            "RISK_MODEL_REPO",
+            "IT22607232_MODEL_REPO",
+            "HUGGINGFACE_MODEL_REPO_RISK",
+        )
+        hf_token = _env_first("HF_TOKEN", "HUGGINGFACE_HUB_TOKEN")
+        downloaded = False
+        if hf_repo and _hf_snapshot_download is not None:
+            try:
+                repo_dir = _hf_snapshot_download(repo_id=hf_repo, token=hf_token)
+                artifacts_dir = repo_dir
+                downloaded = True
+            except Exception:
+                downloaded = False
 
         with open(f"{artifacts_dir}/config.json", "r") as f:
             self.cfg = json.load(f)
 
         self.preprocess  = joblib.load(f"{artifacts_dir}/preprocess.joblib")
-        self.tokenizer   = AutoTokenizer.from_pretrained(self.cfg["text_model"])
+        tokenizer_kwargs = {"token": hf_token} if hf_token else {}
+        self.tokenizer   = AutoTokenizer.from_pretrained(self.cfg["text_model"], **tokenizer_kwargs)
+
+        # Logging: show whether HF token was detected and which artifacts dir is used
+        self.logger = logging.getLogger(__name__)
+        if hf_repo:
+            if downloaded:
+                self.logger.info("Downloaded risk artifacts from HF repo '%s' into %s", hf_repo, artifacts_dir)
+            else:
+                self.logger.info("RISK_MODEL_REPO set to '%s' but download failed; using local artifacts at %s", hf_repo, artifacts_dir)
+        if hf_token:
+            self.logger.info("HUGGINGFACE_HUB_TOKEN detected — will use it for tokenizer/model loading if needed.")
+        else:
+            self.logger.info("No HUGGINGFACE_HUB_TOKEN found — loading from local artifacts when available.")
+        self.logger.info("Artifacts directory: %s", artifacts_dir)
 
         # Derive tab_dim dynamically so it always matches the saved preprocess pipeline
         num_cols = self.cfg["num_cols"]
@@ -179,6 +222,7 @@ class Runtime:
             text_model_name=self.cfg["text_model"],
             hidden=arch.get("hidden", 512),
             dropout=arch.get("dropout", 0.3),
+            hf_token=hf_token,
         ).to(self.device)
 
         state = torch.load(f"{artifacts_dir}/model.pt", map_location=self.device)

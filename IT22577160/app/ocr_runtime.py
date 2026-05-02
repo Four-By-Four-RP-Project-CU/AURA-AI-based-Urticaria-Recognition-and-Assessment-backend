@@ -1,11 +1,21 @@
+import os
 import re
 from typing import Dict, Any, List, Optional, Tuple
 import cv2
 import numpy as np
 import pytesseract
 
-# Point pytesseract to the Tesseract executable on Windows
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Use an explicit tesseract path only when one is configured or on Windows.
+_tesseract_cmd = (
+    os.getenv("TESSERACT_CMD")
+    or os.getenv("PYTESSERACT_CMD")
+)
+if _tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
+elif os.name == "nt":
+    _windows_tesseract = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.exists(_windows_tesseract):
+        pytesseract.pytesseract.tesseract_cmd = _windows_tesseract
 
 def normalize_text(t: str) -> str:
     t = t.replace("μ", "u").replace("µ", "u").replace("×", "x")

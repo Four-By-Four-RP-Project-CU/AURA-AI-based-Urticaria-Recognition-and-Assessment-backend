@@ -81,6 +81,7 @@ def _patched_openapi() -> dict:
 
 app.openapi = _patched_openapi  # type: ignore[method-assign]
 
+@app.get("/health")
 def health():
     return {"status": "ok", "model": "GatedFusionMTL v2", "device": rt.device}
 
